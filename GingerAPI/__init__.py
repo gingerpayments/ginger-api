@@ -43,35 +43,41 @@ class GingerAPI:
     API_ENDPOINT = 'https://api.gingerpayments.com'
     API_VERSION = 'v1'
 
-    def __init__(self, api_key=None):
-        # requests.packages.urllib3.add_stderr_logger()
+    def __init__(self, api_key=None, api_endpoint=None):
         # set API variables
-        self.api_endpoint = self.API_ENDPOINT.strip().rstrip('/')
+        self.api_endpoint = api_endpoint or self.API_ENDPOINT
+        self.api_endpoint = self.api_endpoint.strip().rstrip('/')
+        self.api_key = api_key
         self.api_version = self.API_VERSION.strip()
         self.version_strings = []
         self.version_strings.append('Python/' + sys.version.split(' ')[0])
         self.version_strings.append('Ginger/' + self.WRAPPER_VERSION)
 
-        # API key
-        if api_key is None:
-            raise GingerAPIError('Please provide an API key')
-        self.api_key = api_key
-
         # endpoints
+        self.ideal_issuers = IdealIssuers(self)
         self.merchants = Merchants(self)
         self.orders = Orders(self)
-        self.ideal_issuers = IdealIssuers(self)
         self.partners = Partners(self)
+        self.tokens = Tokens(self)
+
+    def set_api_key(self, api_key):
+        if not api_key:
+            raise GingerAPIError('Please provide an API key')
+
+        self.api_key = api_key
 
     def call_api(self, request_method, path, request_data=None, request_params=None):
 
+        # check for API key
+        if not self.api_key and 'tokens' not in path:
+            raise GingerAPIError('The API key is not defined')
+
         # make request
         request_url = '/'.join([self.api_endpoint, self.api_version, path]) + '/'
-        request_headers = {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                    'User-Agent': ' '.join(self.version_strings)
-                }
+        request_headers = {'Accept': 'application/json',
+                           'Content-Type': 'application/json',
+                           'User-Agent': ' '.join(self.version_strings)
+                           }
         request_auth = (self.api_key, '')
 
         response = requests.request(request_method, request_url,
@@ -80,7 +86,6 @@ class GingerAPI:
                                     params=request_params,
                                     data=request_data
                                     )
-        # print response.content
 
         # decode response to JSON
         try:
@@ -90,6 +95,6 @@ class GingerAPI:
 
         # detect API return errors
         if 'error' in result:
-            raise HTTPError(result, response.request)
+            raise HTTPError(response.status_code, result, response.request)
 
         return result

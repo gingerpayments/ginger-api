@@ -11,6 +11,8 @@ Basic Usage
 
 Python requirements
 * requests>=2.4.1
+* isodate>=0.5.1
+
 
 This API wrapper follows the natural URL of the REST API by Ginger Payments.
 

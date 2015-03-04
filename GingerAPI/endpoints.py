@@ -1,6 +1,7 @@
 import json
 from resources import *
 from exceptions import *
+from utils import GingerJSONEncoder
 
 
 class Base(object):
@@ -15,29 +16,33 @@ class Base(object):
     HTTP functions
     """
 
-    def get(self, endpoint_id=None):
-        if endpoint_id:
+    def get(self, resource_id=None):
+        if resource_id:
             # get single resource
-            result = self.gapi.call_api('GET', self.path + '/' + endpoint_id, None, None)
+            result = self.gapi.call_api('GET', self.path + '/' + resource_id, None, None)
+
             return self.resource(result)
 
         else:
             # get all resources
             result = self.gapi.call_api('GET', self.path, None, None)
+
+            # replace the results with resource objects
             for i, r in enumerate(result):
                 result[i] = self.resource(r)
+
             return result
 
     def post(self, data):
         try:
-            data = json.dumps(data)
+            data = json.dumps(data, cls=GingerJSONEncoder)
         except Exception as e:
             raise GingerAPIError('Error encoding parameters into JSON: "%s"' % e.message)
         result = self.gapi.call_api('POST', self.path, data, None)
 
         return self.resource(result)
 
-    def put(self, endpoint_id, resource):
+    def put(self, resource_id, resource):
         # strip endpoints on resource
         attr_to_delete = list()
         for key, value in resource.iteritems():
@@ -48,15 +53,15 @@ class Base(object):
 
         # perform request
         try:
-            data = json.dumps(resource)
+            data = json.dumps(resource, cls=GingerJSONEncoder)
         except Exception as e:
             raise GingerAPIError('Error encoding parameters into JSON: "%s"' % e.message)
-        result = self.gapi.call_api('PUT', self.path + '/' + endpoint_id, data, None)
+        result = self.gapi.call_api('PUT', self.path + '/' + resource_id, data, None)
 
         return self.resource(result)
 
-    def delete(self, endpoint_id):
-        result = self.gapi.call_api('DELETE', self.path + '/' + endpoint_id, None, None)
+    def delete(self, resource_id):
+        result = self.gapi.call_api('DELETE', self.path + '/' + resource_id, None, None)
 
         return self.resource(result)
 
@@ -64,17 +69,32 @@ class Base(object):
         pass
 
     """
-    Endpoint functions
+    HTTP functions natural language
     """
 
-    def resource(self, result=None):
-        raise NotImplementedError()
-
-    def create(self, data):
+    def add(self, data):
         return self.post(data)
 
     def all(self):
         return self.get(None)
+
+    def create(self, data):
+        return self.post(data)
+
+    def first(self):
+        return self.get(None)[0]
+
+    def update(self, resource_id, resource):
+        return self.put(resource_id, resource)
+
+
+    """
+    Other functions
+    """
+
+    def resource(self, result=None):
+        # for each endpoint the resulting resource
+        raise NotImplementedError()
 
 
 class Merchants(Base):
@@ -91,12 +111,12 @@ class Orders(Base):
         self.gapi = gapi
         self.path = 'orders'
 
-    def create(self, data):
+    def post(self, data):
         # filter amount
         if isinstance(data['amount'], decimal.Decimal):
             data['amount'] = int(round(data['amount'] * 100))
 
-        return self.post(data)
+        return super(Orders, self).post(data)
 
     def resource(self, result):
         return Order(self.gapi, result)
@@ -147,6 +167,24 @@ class Projects(Base):
         return Project(result)
 
 
+class Invoices(Base):
+    def __init__(self, gapi, merchant_id):
+        self.gapi = gapi
+        self.path = 'merchants/%s/invoices' % merchant_id
+
+    def resource(self, result):
+        return Invoice(result)
+
+
+class Tokens(Base):
+    def __init__(self, gapi):
+        self.gapi = gapi
+        self.path = 'tokens'
+
+    def resource(self, result):
+        return Token(result)
+
+
 class Transactions(Base):
     def __init__(self, gapi, order_id):
         self.gapi = gapi
@@ -156,8 +194,29 @@ class Transactions(Base):
         return Transaction(result)
 
 
+class Logs(Base):
+    def __init__(self, gapi, order_id):
+        self.gapi = gapi
+        self.path = 'orders/%s/logs' % order_id
+
+    def resource(self, result):
+        return Log(result)
+
+
 class Refunds(Base):
-    pass
+    def __init__(self, gapi, order_id):
+        self.gapi = gapi
+        self.path = 'orders/%s/refunds' % order_id
+
+    def post(self, data):
+        # filter amount
+        if isinstance(data['amount'], decimal.Decimal):
+            data['amount'] = int(round(data['amount'] * 100))
+
+        return super(Refunds, self).post(data)
+
+    def resource(self, result):
+        return Order(self.gapi, result)
 
 
 class Balances(Base):
@@ -165,16 +224,25 @@ class Balances(Base):
         self.gapi = gapi
         self.path = 'reports/balance/merchants/%s' % merchant_id
 
-    def get(self, endpoint_id=None):
+    def get(self, resource_id=None):
         # response is not a list, but a dict in a dict. Lets transform
         result = self.gapi.call_api('GET', self.path, None, None)
         result_new = dict()
         for i, r in enumerate(result):
             if 'EUR' in result[r]:
-                result_new[r] = float(result[r]['EUR']) / 100
+                result_new[r] = decimal.Decimal(result[r]['EUR']) / decimal.Decimal(100)
             else:
                 result_new[r] = 0
         return self.resource(result_new)
 
     def resource(self, result):
         return Balance(result)
+
+
+class Roles(Base):
+    def __init__(self, gapi, merchant_id):
+        self.gapi = gapi
+        self.path = 'merchants/%s/roles' % merchant_id
+
+    def resource(self, result):
+        return Role(result)
