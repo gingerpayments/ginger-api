@@ -4,3 +4,4 @@
 *.classpath
 *.metadata
 *.py[cod]
+*.egg-info
